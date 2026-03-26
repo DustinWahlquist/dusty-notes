@@ -305,6 +305,58 @@ body {
   color: #888;
 }
 
+/* Drag handle */
+.drag-handle {
+  position: absolute;
+  left: 2px;
+  width: 18px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  cursor: grab;
+  font-size: 13px;
+  border-radius: 3px;
+  user-select: none;
+  z-index: 10;
+  transition: color 0.1s, background 0.1s;
+}
+
+.drag-handle:hover {
+  color: #aaa;
+  background: #333;
+}
+
+.drag-handle.hidden {
+  display: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Drop indicator line */
+.drop-indicator {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: #0e639c;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: 1px;
+}
+
+.drop-indicator.hidden {
+  display: none;
+}
+
+/* Dragged block */
+.preview > *.dragging {
+  opacity: 0.35;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;

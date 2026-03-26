@@ -101,6 +101,8 @@ toggleBtn.addEventListener('click', () => {
     toggleIcon.textContent = 'Preview';
     toggleBtn.classList.remove('active');
     editor.focus();
+    dragHandle.classList.add('hidden');
+    hoveredBlock = null;
   } else {
     // Switch to preview mode — render markdown
     const html = markdownToHtml(editor.value);
@@ -967,6 +969,118 @@ function liContent(li) {
     .map(nodeToMarkdown)
     .join('')
     .trim();
+}
+
+// ── Drag to reorder blocks (preview mode) ──
+const editorContainer = document.querySelector('.editor-container');
+
+const dragHandle = document.createElement('div');
+dragHandle.className = 'drag-handle hidden';
+dragHandle.textContent = '⠿';
+editorContainer.appendChild(dragHandle);
+
+const dropIndicator = document.createElement('div');
+dropIndicator.className = 'drop-indicator hidden';
+editorContainer.appendChild(dropIndicator);
+
+let hoveredBlock = null;
+let draggedBlock = null;
+let isDragging = false;
+
+function getTopLevelBlock(el) {
+  if (!el || el === preview) return null;
+  while (el.parentElement && el.parentElement !== preview) {
+    el = el.parentElement;
+  }
+  return el.parentElement === preview ? el : null;
+}
+
+function positionDragHandle(block) {
+  const containerRect = editorContainer.getBoundingClientRect();
+  const blockRect = block.getBoundingClientRect();
+  dragHandle.style.top = (blockRect.top - containerRect.top + blockRect.height / 2 - 10) + 'px';
+  dragHandle.classList.remove('hidden');
+}
+
+preview.addEventListener('mousemove', (e) => {
+  if (isDragging) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const block = getTopLevelBlock(el);
+  if (block) {
+    hoveredBlock = block;
+    positionDragHandle(block);
+  }
+});
+
+preview.addEventListener('mouseleave', () => {
+  if (isDragging) return;
+  setTimeout(() => {
+    if (!dragHandle.matches(':hover')) {
+      dragHandle.classList.add('hidden');
+      hoveredBlock = null;
+    }
+  }, 100);
+});
+
+preview.addEventListener('scroll', () => {
+  if (!isDragging) dragHandle.classList.add('hidden');
+});
+
+dragHandle.addEventListener('mouseleave', () => {
+  if (!isDragging && !preview.matches(':hover')) {
+    dragHandle.classList.add('hidden');
+    hoveredBlock = null;
+  }
+});
+
+dragHandle.addEventListener('mousedown', (e) => {
+  if (!hoveredBlock) return;
+  e.preventDefault();
+  isDragging = true;
+  draggedBlock = hoveredBlock;
+  draggedBlock.classList.add('dragging');
+  dragHandle.classList.add('hidden');
+  dropIndicator.classList.remove('hidden');
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup', onDragEnd);
+});
+
+function getDropPosition(y) {
+  const children = Array.from(preview.children).filter(el => el !== draggedBlock);
+  const containerRect = editorContainer.getBoundingClientRect();
+  for (const child of children) {
+    const rect = child.getBoundingClientRect();
+    if (y < rect.top + rect.height / 2) {
+      return { insertBefore: child, indicatorY: rect.top - containerRect.top };
+    }
+  }
+  const last = children[children.length - 1];
+  const indicatorY = last ? last.getBoundingClientRect().bottom - containerRect.top : 0;
+  return { insertBefore: null, indicatorY };
+}
+
+function onDragMove(e) {
+  const { indicatorY } = getDropPosition(e.clientY);
+  dropIndicator.style.top = indicatorY + 'px';
+}
+
+function onDragEnd(e) {
+  isDragging = false;
+  draggedBlock.classList.remove('dragging');
+  dropIndicator.classList.add('hidden');
+
+  const { insertBefore } = getDropPosition(e.clientY);
+  if (insertBefore) {
+    preview.insertBefore(draggedBlock, insertBefore);
+  } else {
+    preview.appendChild(draggedBlock);
+  }
+
+  draggedBlock = null;
+  hoveredBlock = null;
+  document.removeEventListener('mousemove', onDragMove);
+  document.removeEventListener('mouseup', onDragEnd);
+  scheduleSave();
 }
 
 // ── Start ──
