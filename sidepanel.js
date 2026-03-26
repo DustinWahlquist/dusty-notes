@@ -19,6 +19,29 @@ const groupDot = document.getElementById('groupDot');
 const saveStatus = document.getElementById('saveStatus');
 const slashMenu = document.getElementById('slashMenu');
 
+// ── Code block languages ──
+const CODE_LANGUAGES = [
+  { label: 'Plain text',  value: '' },
+  { label: 'JavaScript', value: 'javascript' },
+  { label: 'TypeScript', value: 'typescript' },
+  { label: 'Python',     value: 'python' },
+  { label: 'HTML',       value: 'markup' },
+  { label: 'CSS',        value: 'css' },
+  { label: 'Bash',       value: 'bash' },
+  { label: 'JSON',       value: 'json' },
+  { label: 'SQL',        value: 'sql' },
+  { label: 'Markdown',   value: 'markdown' },
+  { label: 'Ruby',       value: 'ruby' },
+  { label: 'Go',         value: 'go' },
+  { label: 'Java',       value: 'java' },
+  { label: 'Rust',       value: 'rust' },
+];
+
+const LANG_ALIASES = {
+  'js': 'javascript', 'ts': 'typescript', 'py': 'python',
+  'html': 'markup', 'sh': 'bash', 'shell': 'bash', 'md': 'markdown',
+};
+
 // ── Slash commands ──
 const SLASH_COMMANDS = [
   { name: 'Heading 1',  keyword: 'h1',        icon: 'H1', desc: 'Large heading',           insert: '# '  },
@@ -64,6 +87,7 @@ async function switchContext(info) {
   editor.value = content;
   preview.innerHTML = markdownToHtml(content);
   bindCheckboxes();
+  highlightCodeBlocks();
 
   saveStatus.textContent = 'Loaded';
 }
@@ -108,6 +132,7 @@ toggleBtn.addEventListener('click', () => {
     const html = markdownToHtml(editor.value);
     preview.innerHTML = html;
     bindCheckboxes();
+    highlightCodeBlocks();
     editor.classList.add('hidden');
     preview.classList.remove('hidden');
     toggleIcon.textContent = 'Edit';
@@ -955,6 +980,11 @@ function nodeToMarkdown(node) {
       return '\n';
 
     case 'div':
+      if (node.classList.contains('code-block-wrapper')) {
+        const pre = node.querySelector('pre');
+        return pre ? nodeToMarkdown(pre) : '';
+      }
+      if (node.classList.contains('code-lang-picker')) return '';
       // contenteditable often wraps new lines in divs
       return `${childContent()}\n`;
 
@@ -1081,6 +1111,61 @@ function onDragEnd(e) {
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup', onDragEnd);
   scheduleSave();
+}
+
+// ── Syntax highlighting ──
+function highlightCodeBlocks() {
+  preview.querySelectorAll('pre:not(.code-block-wrapped)').forEach(addCodeBlockUI);
+}
+
+function addCodeBlockUI(pre) {
+  const codeEl = pre.querySelector('code');
+  if (!codeEl) return;
+
+  // Normalize language alias (e.g. 'js' -> 'javascript')
+  const rawLang = (codeEl.className.match(/language-(\w+)/) || [])[1] || '';
+  const lang = LANG_ALIASES[rawLang] || rawLang;
+  codeEl.className = lang ? `language-${lang}` : '';
+  pre.className = `line-numbers code-block-wrapped${lang ? ` language-${lang}` : ''}`;
+
+  // Wrap in container
+  const wrapper = document.createElement('div');
+  wrapper.className = 'code-block-wrapper';
+  pre.parentNode.insertBefore(wrapper, pre);
+  wrapper.appendChild(pre);
+
+  // Make code non-editable so Prism markup isn't mangled
+  pre.setAttribute('contenteditable', 'false');
+
+  // Language picker
+  const pickerDiv = document.createElement('div');
+  pickerDiv.className = 'code-lang-picker';
+  pickerDiv.setAttribute('contenteditable', 'false');
+
+  const select = document.createElement('select');
+  CODE_LANGUAGES.forEach(({ label, value }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    if (value === lang) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  select.addEventListener('change', () => {
+    const newLang = select.value;
+    const rawCode = codeEl.textContent; // textContent strips Prism spans
+    codeEl.className = newLang ? `language-${newLang}` : '';
+    pre.className = `line-numbers code-block-wrapped${newLang ? ` language-${newLang}` : ''}`;
+    codeEl.textContent = rawCode; // reset before re-highlight
+    if (newLang && window.Prism) Prism.highlightElement(codeEl);
+    scheduleSave();
+  });
+
+  pickerDiv.appendChild(select);
+  wrapper.appendChild(pickerDiv);
+
+  // Highlight
+  if (lang && window.Prism) Prism.highlightElement(codeEl);
 }
 
 // ── Start ──

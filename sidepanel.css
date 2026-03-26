@@ -305,6 +305,50 @@ body {
   color: #888;
 }
 
+/* Code block wrapper & language picker */
+.code-block-wrapper {
+  position: relative;
+  margin: 0.5em 0;
+}
+
+.code-block-wrapper pre {
+  margin: 0;
+  border-radius: 4px 4px 0 0;
+}
+
+.code-lang-picker {
+  display: flex;
+  justify-content: center;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  padding: 4px 0;
+}
+
+.code-lang-picker select {
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 10px;
+  color: #777;
+  font-size: 10px;
+  padding: 1px 10px;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.code-lang-picker select:hover {
+  border-color: #666;
+  color: #aaa;
+}
+
+/* Prism line-numbers gutter tweak */
+.preview pre.line-numbers {
+  padding-left: 3.5em;
+}
+
 /* Drag handle */
 .drag-handle {
   position: absolute;
