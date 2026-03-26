@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Dusty Tab Notes",
+  "version": "1.0.0",
+  "description": "A sidebar notepad for each Chrome tab group — with markdown editing, slash commands, and auto-save.",
+  "permissions": [
+    "sidePanel",
+    "tabGroups",
+    "storage",
+    "activeTab",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Dusty Tab Notes"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' https://cdnjs.cloudflare.com; object-src 'self'"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
