@@ -262,25 +262,13 @@ function handleSlashKeydown(e) {
 editor.addEventListener('keydown', (e) => {
   if (handleSlashKeydown(e)) return;
 
-  if (e.key === 'Tab') {
+  if (e.key === 'Tab' && !e.shiftKey) {
     e.preventDefault();
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    if (e.shiftKey) {
-      // Unindent: remove up to 2 spaces from the start of the current line
-      const text = editor.value;
-      const lineStart = text.lastIndexOf('\n', start - 1) + 1;
-      const spaces = text.substring(lineStart, lineStart + 2).match(/^ {1,2}/)?.[0] || '';
-      if (spaces.length > 0) {
-        editor.value = text.substring(0, lineStart) + text.substring(lineStart + spaces.length);
-        editor.selectionStart = editor.selectionEnd = Math.max(lineStart, start - spaces.length);
-        scheduleSave();
-      }
-    } else {
-      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-      editor.selectionStart = editor.selectionEnd = start + 2;
-      scheduleSave();
-    }
+    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 2;
+    scheduleSave();
   }
 
   if (e.key === 'Enter') {
@@ -308,6 +296,40 @@ editor.addEventListener('keydown', (e) => {
 // ── Preview keydown ──
 preview.addEventListener('keydown', (e) => {
   if (handleSlashKeydown(e)) return;
+
+  if (e.key === 'Tab') {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const node = sel.getRangeAt(0).startContainer;
+    const li = node.nodeType === Node.TEXT_NODE
+      ? node.parentElement?.closest('li')
+      : node.closest?.('li');
+    if (li) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        // Unindent: move li out of nested ul to parent level
+        const parentUl = li.parentElement;
+        const grandparentLi = parentUl.parentElement;
+        if (grandparentLi && grandparentLi.tagName.toLowerCase() === 'li') {
+          grandparentLi.parentElement.insertBefore(li, grandparentLi.nextSibling);
+          if (parentUl.children.length === 0) parentUl.remove();
+        }
+      } else {
+        // Indent: move li into a nested ul inside the previous sibling li
+        const prevLi = li.previousElementSibling;
+        if (prevLi) {
+          let nestedUl = prevLi.querySelector(':scope > ul');
+          if (!nestedUl) {
+            nestedUl = document.createElement('ul');
+            prevLi.appendChild(nestedUl);
+          }
+          nestedUl.appendChild(li);
+        }
+      }
+      placeCursorAtEnd(li);
+      scheduleSave();
+    }
+  }
 
   if (e.key === 'Enter') {
     const sel = window.getSelection();
