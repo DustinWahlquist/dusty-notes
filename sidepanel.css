@@ -187,6 +187,12 @@ body {
   font-weight: 600;
 }
 
+/* Checkbox list items — hide bullet, align with checkbox */
+.preview li:has(input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -16px;
+}
+
 /* Checkbox styling in preview */
 .preview input[type="checkbox"] {
   margin-right: 6px;

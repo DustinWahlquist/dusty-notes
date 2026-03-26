@@ -24,8 +24,7 @@ const SLASH_COMMANDS = [
   { name: 'Heading 1',  keyword: 'h1',        icon: 'H1', desc: 'Large heading',           insert: '# '  },
   { name: 'Heading 2',  keyword: 'h2',        icon: 'H2', desc: 'Medium heading',          insert: '## ' },
   { name: 'Heading 3',  keyword: 'h3',        icon: 'H3', desc: 'Small heading',           insert: '### ' },
-  { name: 'To-do',      keyword: 'todo',      icon: '\u2610', desc: 'Single checkbox item',    insert: '- [ ] ' },
-  { name: 'Checklist',  keyword: 'checklist', icon: '\u2611', desc: 'Multiple checkbox items', insert: '- [ ] Item 1\n- [ ] Item 2\n- [ ] Item 3\n' },
+  { name: 'To-do',      keyword: 'todo',      icon: '\u2610', desc: 'Checkbox item',           insert: '- [ ] ' },
   { name: 'Code Block', keyword: 'code',      icon: '<>', desc: 'Fenced code block',       insert: '```\n\n```',  cursorOffset: 4 },
   { name: 'Table',      keyword: 'table',     icon: '\u2637', desc: 'Markdown table',          insert: '| Column 1 | Column 2 | Column 3 |\n| -------- | -------- | -------- |\n| cell     | cell     | cell     |\n' },
   { name: 'Divider',    keyword: 'divider',   icon: '\u2014', desc: 'Horizontal rule',         insert: '\n---\n' },
@@ -271,11 +270,64 @@ editor.addEventListener('keydown', (e) => {
     editor.selectionStart = editor.selectionEnd = start + 2;
     scheduleSave();
   }
+
+  if (e.key === 'Enter') {
+    const pos = editor.selectionStart;
+    const text = editor.value;
+    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    const line = text.substring(lineStart, pos);
+    if (/^- \[[ xX]\] /.test(line)) {
+      e.preventDefault();
+      const todoText = line.replace(/^- \[[ xX]\] /, '');
+      if (todoText === '') {
+        // Empty todo — exit the list
+        editor.value = text.substring(0, lineStart) + text.substring(pos);
+        editor.selectionStart = editor.selectionEnd = lineStart;
+      } else {
+        const insert = '\n- [ ] ';
+        editor.value = text.substring(0, pos) + insert + text.substring(pos);
+        editor.selectionStart = editor.selectionEnd = pos + insert.length;
+      }
+      scheduleSave();
+    }
+  }
 });
 
 // ── Preview keydown ──
 preview.addEventListener('keydown', (e) => {
-  handleSlashKeydown(e);
+  if (handleSlashKeydown(e)) return;
+
+  if (e.key === 'Enter') {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const node = sel.getRangeAt(0).startContainer;
+    const li = node.nodeType === Node.TEXT_NODE
+      ? node.parentElement?.closest('li')
+      : node.closest?.('li');
+    if (li && li.querySelector('input[type="checkbox"]')) {
+      e.preventDefault();
+      const textContent = li.textContent.trim();
+      if (textContent === '') {
+        // Empty todo — exit the list
+        const ul = li.closest('ul');
+        const newP = document.createElement('p');
+        newP.innerHTML = '<br>';
+        ul.parentNode.insertBefore(newP, ul.nextSibling);
+        li.remove();
+        if (ul.children.length === 0) ul.remove();
+        placeCursorAtEnd(newP);
+      } else {
+        const newLi = document.createElement('li');
+        const newCb = document.createElement('input');
+        newCb.type = 'checkbox';
+        newLi.appendChild(newCb);
+        newLi.appendChild(document.createTextNode(' '));
+        li.parentNode.insertBefore(newLi, li.nextSibling);
+        placeCursorAtEnd(newLi);
+      }
+      scheduleSave();
+    }
+  }
 });
 
 // ── Editor slash detection ──
@@ -472,7 +524,6 @@ const PREVIEW_HTML = {
   'h2':        (sel) => { replaceSlashTextWithBlock('h2', '', sel); },
   'h3':        (sel) => { replaceSlashTextWithBlock('h3', '', sel); },
   'todo':      (sel) => { insertHtmlAtSlash('<ul><li><input type="checkbox"> </li></ul>', sel); },
-  'checklist': (sel) => { insertHtmlAtSlash('<ul><li><input type="checkbox"> Item 1</li><li><input type="checkbox"> Item 2</li><li><input type="checkbox"> Item 3</li></ul>', sel); },
   'code':      (sel) => { insertHtmlAtSlash('<pre><code>\n</code></pre>', sel); },
   'table':     (sel) => { insertHtmlAtSlash('<table><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr><tr><td>cell</td><td>cell</td><td>cell</td></tr></table>', sel); },
   'divider':   (sel) => { insertHtmlAtSlash('<hr>', sel); },
