@@ -112,9 +112,9 @@ body {
 }
 
 /* Markdown preview styles */
-.preview h1 { font-size: 1.5em; font-weight: 600; margin: 0.6em 0 0.3em; color: #e6e6e6; border-bottom: 1px solid #333; padding-bottom: 0.2em; }
-.preview h2 { font-size: 1.3em; font-weight: 600; margin: 0.5em 0 0.3em; color: #e6e6e6; }
-.preview h3 { font-size: 1.1em; font-weight: 600; margin: 0.4em 0 0.2em; color: #e6e6e6; }
+.preview h1 { font-size: 1.8em; font-weight: 700; margin: 0.6em 0 0.3em; color: #e6e6e6; }
+.preview h2 { font-size: 1.4em; font-weight: 700; margin: 0.5em 0 0.3em; color: #e6e6e6; }
+.preview h3 { font-size: 1.15em; font-weight: 700; margin: 0.4em 0 0.2em; color: #e6e6e6; }
 .preview h4, .preview h5, .preview h6 { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; color: #ccc; }
 
 .preview p { margin: 0.4em 0; }
