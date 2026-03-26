@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dusty Tab Notes</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="header">
+    <div class="group-badge">
+      <div class="group-dot" id="groupDot"></div>
+      <span class="group-label" id="groupLabel">Loading...</span>
+    </div>
+    <button class="toggle-btn active" id="toggleMode">
+      <span id="toggleIcon">Preview</span>
+    </button>
+  </div>
+
+  <div class="editor-container">
+    <textarea
+      class="editor hidden"
+      id="editor"
+      placeholder="Start typing… or type / for commands"
+      spellcheck="false"
+    ></textarea>
+    <div
+      class="preview"
+      id="preview"
+      contenteditable="true"
+      spellcheck="false"
+    ></div>
+    <div class="slash-menu hidden" id="slashMenu"></div>
+  </div>
+
+  <div class="status-bar" id="saveStatus">Ready</div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
