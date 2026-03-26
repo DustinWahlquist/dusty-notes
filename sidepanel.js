@@ -266,9 +266,21 @@ editor.addEventListener('keydown', (e) => {
     e.preventDefault();
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-    editor.selectionStart = editor.selectionEnd = start + 2;
-    scheduleSave();
+    if (e.shiftKey) {
+      // Unindent: remove up to 2 spaces from the start of the current line
+      const text = editor.value;
+      const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+      const spaces = text.substring(lineStart, lineStart + 2).match(/^ {1,2}/)?.[0] || '';
+      if (spaces.length > 0) {
+        editor.value = text.substring(0, lineStart) + text.substring(lineStart + spaces.length);
+        editor.selectionStart = editor.selectionEnd = Math.max(lineStart, start - spaces.length);
+        scheduleSave();
+      }
+    } else {
+      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+      editor.selectionStart = editor.selectionEnd = start + 2;
+      scheduleSave();
+    }
   }
 
   if (e.key === 'Enter') {
