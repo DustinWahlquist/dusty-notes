@@ -35,6 +35,8 @@ const CODE_LANGUAGES = [
   { label: 'Go',         value: 'go' },
   { label: 'Java',       value: 'java' },
   { label: 'Rust',       value: 'rust' },
+  { label: 'C++',        value: 'cpp' },
+  { label: 'C#',         value: 'csharp' },
 ];
 
 const LANG_ALIASES = {
@@ -1134,8 +1136,22 @@ function addCodeBlockUI(pre) {
   pre.parentNode.insertBefore(wrapper, pre);
   wrapper.appendChild(pre);
 
-  // Make code non-editable so Prism markup isn't mangled
+  // pre is non-editable; code element is an editable island inside it
   pre.setAttribute('contenteditable', 'false');
+  codeEl.setAttribute('contenteditable', 'true');
+
+  // When focused, strip Prism spans so the user edits plain text
+  codeEl.addEventListener('focus', () => {
+    codeEl.textContent = codeEl.textContent;
+  });
+
+  // Re-highlight on blur
+  codeEl.addEventListener('blur', () => {
+    const currentLang = (codeEl.className.match(/language-(\w+)/) || [])[1] || '';
+    if (currentLang && window.Prism) Prism.highlightElement(codeEl);
+  });
+
+  codeEl.addEventListener('input', scheduleSave);
 
   // Language picker
   const pickerDiv = document.createElement('div');
@@ -1153,10 +1169,10 @@ function addCodeBlockUI(pre) {
 
   select.addEventListener('change', () => {
     const newLang = select.value;
-    const rawCode = codeEl.textContent; // textContent strips Prism spans
+    const rawCode = codeEl.textContent;
     codeEl.className = newLang ? `language-${newLang}` : '';
     pre.className = `line-numbers code-block-wrapped${newLang ? ` language-${newLang}` : ''}`;
-    codeEl.textContent = rawCode; // reset before re-highlight
+    codeEl.textContent = rawCode;
     if (newLang && window.Prism) Prism.highlightElement(codeEl);
     scheduleSave();
   });
@@ -1164,7 +1180,7 @@ function addCodeBlockUI(pre) {
   pickerDiv.appendChild(select);
   wrapper.appendChild(pickerDiv);
 
-  // Highlight
+  // Initial highlight
   if (lang && window.Prism) Prism.highlightElement(codeEl);
 }
 
