@@ -628,18 +628,20 @@ function replaceSlashTextWithBlock(tag, placeholder, sel) {
     blockParent = blockParent.parentElement;
   }
 
+  const content = before + placeholder + after;
+
   if (!blockParent || blockParent === preview) {
     // Text is a direct child of preview — wrap it
     const newEl = document.createElement(tag);
-    newEl.textContent = before + placeholder + after;
+    newEl.innerHTML = content || '<br>';
     slashTextNode.parentNode.replaceChild(newEl, slashTextNode);
-    placeCursorAtEnd(newEl);
+    placeCursorInBlock(newEl, content);
   } else {
     // Replace the block tag
     const newEl = document.createElement(tag);
-    newEl.innerHTML = before + placeholder + after;
+    newEl.innerHTML = content || '<br>';
     blockParent.parentNode.replaceChild(newEl, blockParent);
-    placeCursorAtEnd(newEl);
+    placeCursorInBlock(newEl, content);
   }
 }
 
@@ -691,6 +693,21 @@ function insertHtmlAtSlash(htmlStr, sel) {
   // Place cursor in the last inserted element
   if (lastInserted) {
     placeCursorAtEnd(lastInserted);
+  }
+}
+
+// For newly created block elements: if empty use setStart for reliable cursor placement,
+// otherwise fall back to placeCursorAtEnd.
+function placeCursorInBlock(el, content) {
+  if (!content) {
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.setStart(el, 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    placeCursorAtEnd(el);
   }
 }
 
@@ -902,12 +919,12 @@ function nodeToMarkdown(node) {
   const childContent = () => Array.from(node.childNodes).map(nodeToMarkdown).join('');
 
   switch (tag) {
-    case 'h1': return `# ${childContent()}\n\n`;
-    case 'h2': return `## ${childContent()}\n\n`;
-    case 'h3': return `### ${childContent()}\n\n`;
-    case 'h4': return `#### ${childContent()}\n\n`;
-    case 'h5': return `##### ${childContent()}\n\n`;
-    case 'h6': return `###### ${childContent()}\n\n`;
+    case 'h1': return `# ${childContent().trim()}\n\n`;
+    case 'h2': return `## ${childContent().trim()}\n\n`;
+    case 'h3': return `### ${childContent().trim()}\n\n`;
+    case 'h4': return `#### ${childContent().trim()}\n\n`;
+    case 'h5': return `##### ${childContent().trim()}\n\n`;
+    case 'h6': return `###### ${childContent().trim()}\n\n`;
 
     case 'p': return `${childContent()}\n\n`;
 
