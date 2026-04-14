@@ -121,7 +121,7 @@ body {
 
 .preview strong { color: #e6e6e6; }
 
-.preview a { color: #3794ff; text-decoration: none; }
+.preview a { color: #3794ff; text-decoration: none; cursor: pointer; }
 .preview a:hover { text-decoration: underline; }
 
 .preview code {
