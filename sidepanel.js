@@ -606,7 +606,9 @@ preview.addEventListener('keydown', (e) => {
         const newCb = document.createElement('input');
         newCb.type = 'checkbox';
         newLi.appendChild(newCb);
-        newLi.appendChild(document.createTextNode(' '));
+        // NBSP (not ASCII space) so the caret has a visible anchor in an
+        // empty todo. .trim() still strips it during markdown serialization.
+        newLi.appendChild(document.createTextNode('\u00A0'));
         li.parentNode.insertBefore(newLi, li.nextSibling);
         placeCursorAtEnd(newLi);
       }
@@ -808,7 +810,7 @@ const PREVIEW_HTML = {
   'h1':        (sel) => { replaceSlashTextWithBlock('h1', '', sel); },
   'h2':        (sel) => { replaceSlashTextWithBlock('h2', '', sel); },
   'h3':        (sel) => { replaceSlashTextWithBlock('h3', '', sel); },
-  'todo':      (sel) => { insertHtmlAtSlash('<ul><li><input type="checkbox"> </li></ul>', sel); },
+  'todo':      (sel) => { insertHtmlAtSlash('<ul><li><input type="checkbox">&nbsp;</li></ul>', sel); },
   'code':      (sel) => { insertHtmlAtSlash('<pre><code>\n</code></pre>', sel); },
   'table':     (sel) => { insertHtmlAtSlash('<table><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr><tr><td>cell</td><td>cell</td><td>cell</td></tr></table>', sel); },
   'divider':   (sel) => { insertHtmlAtSlash('<hr>', sel); },
@@ -1044,9 +1046,11 @@ function markdownToHtml(md) {
         const isChecked = cbMatch[1] !== ' ';
         const checked = isChecked ? ' checked' : '';
         const text = inlineMarkdown(cbMatch[2]);
+        // NBSP between checkbox and text so an empty todo still has a
+        // visible caret anchor (a trailing ASCII space collapses in CSS).
         content = isChecked
-          ? `<input type="checkbox"${checked}> <del class="checked-text">${text}</del>`
-          : `<input type="checkbox"${checked}> ${text}`;
+          ? `<input type="checkbox"${checked}>&nbsp;<del class="checked-text">${text}</del>`
+          : `<input type="checkbox"${checked}>&nbsp;${text}`;
       } else {
         content = inlineMarkdown(content);
       }
