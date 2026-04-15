@@ -265,9 +265,70 @@ function maybeLinkifyBeforeCursor() {
   sel.addRange(newRange);
 }
 
+// If the user typed "- " at the start of a non-list block, turn that block
+// into a <ul><li>. Runs after the space has been inserted.
+function maybeConvertDashToBullet() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  if (!range.collapsed) return;
+
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+
+  // Find the top-level block in preview that contains the cursor.
+  let block = node.parentElement;
+  while (block && block.parentElement !== preview) {
+    block = block.parentElement;
+  }
+  if (!block || block.parentElement !== preview) return;
+
+  const tag = block.tagName.toLowerCase();
+  // Only plain paragraphs/divs/headings — not lists, blockquotes, or code.
+  if (!['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return;
+
+  // The cursor must sit right after a literal "- " at the block's start.
+  // Walk to the first text node in the block.
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  const firstText = walker.nextNode();
+  if (!firstText) return;
+  if (node !== firstText) return;
+  if (range.startOffset !== 2) return;
+  if (!firstText.textContent.startsWith('- ')) return;
+
+  // Strip the "- " prefix; if that leaves the li empty, use NBSP so the
+  // caret has something to anchor to.
+  firstText.textContent = firstText.textContent.slice(2);
+  if (block.textContent.length === 0) {
+    firstText.textContent = '\u00A0';
+  }
+
+  // Wrap the block's remaining children in <ul><li> and swap them in.
+  const ul = document.createElement('ul');
+  const li = document.createElement('li');
+  while (block.firstChild) li.appendChild(block.firstChild);
+  ul.appendChild(li);
+  block.parentNode.replaceChild(ul, block);
+
+  // Put the caret at the start of the new li's content.
+  const liWalker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+  const firstLiText = liWalker.nextNode();
+  if (firstLiText) {
+    const newRange = document.createRange();
+    newRange.setStart(firstLiText, 0);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+  scheduleSave();
+}
+
 preview.addEventListener('keyup', (e) => {
   if (!isPreviewMode) return;
-  if (e.key === ' ' || e.key === 'Enter') {
+  if (e.key === ' ') {
+    maybeConvertDashToBullet();
+    maybeLinkifyBeforeCursor();
+  } else if (e.key === 'Enter') {
     maybeLinkifyBeforeCursor();
   }
 });
