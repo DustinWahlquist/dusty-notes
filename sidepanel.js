@@ -61,7 +61,7 @@ async function init() {
   // Start in preview mode
   editor.classList.add('hidden');
   preview.classList.remove('hidden');
-  toggleIcon.textContent = 'Edit';
+  toggleIcon.textContent = '.md';
   toggleBtn.classList.add('active');
 
   const info = await chrome.runtime.sendMessage({ type: 'get-current-tab' });
@@ -90,6 +90,7 @@ async function switchContext(info) {
   preview.innerHTML = markdownToHtml(content);
   bindCheckboxes();
   highlightCodeBlocks();
+  autolinkTextNodes(preview);
 
   saveStatus.textContent = 'Loaded';
 }
@@ -135,9 +136,10 @@ toggleBtn.addEventListener('click', () => {
     preview.innerHTML = html;
     bindCheckboxes();
     highlightCodeBlocks();
+    autolinkTextNodes(preview);
     editor.classList.add('hidden');
     preview.classList.remove('hidden');
-    toggleIcon.textContent = 'Edit';
+    toggleIcon.textContent = '.md';
     toggleBtn.classList.add('active');
     preview.focus();
   }
@@ -151,6 +153,264 @@ editor.addEventListener('input', scheduleSave);
 // ── Preview input (contenteditable) ──
 preview.addEventListener('input', scheduleSave);
 
+// ── Auto-hyperlink URLs in preview mode ──
+const URL_REGEX = /https?:\/\/[^\s<>"']+/g;
+
+// Walk text nodes and convert bare URLs to <a> tags, skipping links/code.
+function autolinkTextNodes(container) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.parentElement) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement.closest('a, code, pre')) return NodeFilter.FILTER_REJECT;
+      URL_REGEX.lastIndex = 0;
+      return URL_REGEX.test(node.textContent)
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT;
+    }
+  });
+
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  nodes.forEach(linkifyTextNode);
+}
+
+function linkifyTextNode(textNode) {
+  const text = textNode.textContent;
+  const parent = textNode.parentNode;
+  if (!parent) return;
+
+  const frag = document.createDocumentFragment();
+  let lastIdx = 0;
+  let match;
+  const re = new RegExp(URL_REGEX.source, 'g');
+
+  while ((match = re.exec(text)) !== null) {
+    let url = match[0];
+    // Trim trailing punctuation that's probably not part of the URL
+    const trailingMatch = url.match(/[.,;:!?)\]}'"]+$/);
+    if (trailingMatch) url = url.slice(0, -trailingMatch[0].length);
+    if (!url) continue;
+
+    if (match.index > lastIdx) {
+      frag.appendChild(document.createTextNode(text.substring(lastIdx, match.index)));
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = url;
+    frag.appendChild(a);
+    lastIdx = match.index + url.length;
+  }
+
+  if (lastIdx === 0) return; // no matches
+
+  if (lastIdx < text.length) {
+    frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+  }
+  parent.replaceChild(frag, textNode);
+}
+
+// After typing space/enter, linkify a URL that just ended before the cursor.
+function maybeLinkifyBeforeCursor() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+  if (node.parentElement?.closest('a, code, pre')) return;
+
+  const text = node.textContent;
+  const cursorPos = range.startOffset;
+  const beforeCursor = text.substring(0, cursorPos);
+
+  // Find a URL that ends just before trailing whitespace at the cursor.
+  const match = beforeCursor.match(/(^|\s)(https?:\/\/[^\s]+?)([.,;:!?)\]}'"]*)(\s+)$/);
+  if (!match) return;
+
+  const leading = match[1];
+  const url = match[2];
+  const trailingPunct = match[3];
+  const trailingSpace = match[4];
+  const urlStart = match.index + leading.length;
+  const urlEnd = urlStart + url.length;
+  const afterIdx = urlEnd + trailingPunct.length + trailingSpace.length;
+
+  const before = text.substring(0, urlStart);
+  const after = text.substring(afterIdx);
+  const parent = node.parentNode;
+  if (!parent) return;
+
+  if (before) {
+    parent.insertBefore(document.createTextNode(before), node);
+  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = url;
+  parent.insertBefore(a, node);
+
+  const tail = trailingPunct + trailingSpace + after;
+  const afterNode = document.createTextNode(tail);
+  parent.insertBefore(afterNode, node);
+  parent.removeChild(node);
+
+  // Place cursor just after the trailing whitespace (where the user was typing).
+  const newRange = document.createRange();
+  newRange.setStart(afterNode, trailingPunct.length + trailingSpace.length);
+  newRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+}
+
+// If the user typed "- " at the start of a non-list block, turn that block
+// into a <ul><li>. Runs after the space has been inserted.
+function maybeConvertDashToBullet() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  if (!range.collapsed) return;
+
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+
+  // Find the top-level block in preview that contains the cursor.
+  let block = node.parentElement;
+  while (block && block.parentElement !== preview) {
+    block = block.parentElement;
+  }
+  if (!block || block.parentElement !== preview) return;
+
+  const tag = block.tagName.toLowerCase();
+  // Only plain paragraphs/divs/headings — not lists, blockquotes, or code.
+  if (!['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return;
+
+  // The cursor must sit right after a literal "- " at the block's start.
+  // Walk to the first text node in the block.
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  const firstText = walker.nextNode();
+  if (!firstText) return;
+  if (node !== firstText) return;
+  if (range.startOffset !== 2) return;
+  if (!firstText.textContent.startsWith('- ')) return;
+
+  // Strip the "- " prefix; if that leaves the li empty, use NBSP so the
+  // caret has something to anchor to.
+  firstText.textContent = firstText.textContent.slice(2);
+  if (block.textContent.length === 0) {
+    firstText.textContent = '\u00A0';
+  }
+
+  // Wrap the block's remaining children in <ul><li> and swap them in.
+  const ul = document.createElement('ul');
+  const li = document.createElement('li');
+  while (block.firstChild) li.appendChild(block.firstChild);
+  ul.appendChild(li);
+  block.parentNode.replaceChild(ul, block);
+
+  // Put the caret at the start of the new li's content.
+  const liWalker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+  const firstLiText = liWalker.nextNode();
+  if (firstLiText) {
+    const newRange = document.createRange();
+    newRange.setStart(firstLiText, 0);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+  scheduleSave();
+}
+
+preview.addEventListener('keyup', (e) => {
+  if (!isPreviewMode) return;
+  if (e.key === ' ') {
+    maybeConvertDashToBullet();
+    maybeLinkifyBeforeCursor();
+  } else if (e.key === 'Enter') {
+    maybeLinkifyBeforeCursor();
+  }
+});
+
+// Linkify URLs in pasted plain text; leave HTML pastes to the browser.
+preview.addEventListener('paste', (e) => {
+  if (!isPreviewMode) return;
+  const cd = e.clipboardData;
+  if (!cd) return;
+  const hasHtml = Array.from(cd.types || []).includes('text/html');
+  if (hasHtml) {
+    // Let browser handle rich paste, then linkify any bare URLs it contains.
+    setTimeout(() => {
+      autolinkTextNodes(preview);
+      scheduleSave();
+    }, 0);
+    return;
+  }
+
+  const text = cd.getData('text/plain');
+  if (!text) return;
+  URL_REGEX.lastIndex = 0;
+  if (!URL_REGEX.test(text)) return;
+
+  e.preventDefault();
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+
+  // Build a fragment with text and <a> nodes
+  const frag = document.createDocumentFragment();
+  const re = new RegExp(URL_REGEX.source, 'g');
+  let lastIdx = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    let url = m[0];
+    const trailingMatch = url.match(/[.,;:!?)\]}'"]+$/);
+    if (trailingMatch) url = url.slice(0, -trailingMatch[0].length);
+    if (!url) continue;
+    if (m.index > lastIdx) {
+      frag.appendChild(document.createTextNode(text.substring(lastIdx, m.index)));
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = url;
+    frag.appendChild(a);
+    lastIdx = m.index + url.length;
+  }
+  if (lastIdx < text.length) {
+    frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+  }
+
+  // Track the last inserted node so we can place the cursor after it
+  const lastNode = frag.lastChild;
+  range.insertNode(frag);
+  if (lastNode) {
+    const newRange = document.createRange();
+    newRange.setStartAfter(lastNode);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+  scheduleSave();
+});
+
+// Make links clickable in preview (contenteditable swallows link navigation).
+preview.addEventListener('click', (e) => {
+  const a = e.target.closest?.('a');
+  if (!a || !a.href) return;
+  // Ignore clicks while dragging blocks
+  if (isDragging) return;
+  e.preventDefault();
+  try {
+    chrome.tabs.create({ url: a.href });
+  } catch (_) {
+    window.open(a.href, '_blank', 'noopener,noreferrer');
+  }
+});
+
 // ── Strikethrough shortcut (Cmd+Shift+S / Ctrl+Shift+S) ──
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 's') {
@@ -162,24 +422,47 @@ document.addEventListener('keydown', (e) => {
       if (!sel.rangeCount || sel.isCollapsed) return;
       const range = sel.getRangeAt(0);
 
-      // Check if already inside a <del> — if so, unwrap
-      let parentDel = sel.anchorNode.parentElement?.closest('del');
-      if (parentDel) {
-        const text = parentDel.textContent;
-        const textNode = document.createTextNode(text);
-        parentDel.parentNode.replaceChild(textNode, parentDel);
-        // Re-select the text
-        const newRange = document.createRange();
-        newRange.selectNodeContents(textNode);
-        sel.removeAllRanges();
-        sel.addRange(newRange);
+      // Check if the selection is entirely inside an existing <del>/<s>
+      const startContainer = range.startContainer;
+      const endContainer = range.endContainer;
+      const startEl = startContainer.nodeType === Node.ELEMENT_NODE
+        ? startContainer : startContainer.parentElement;
+      const endEl = endContainer.nodeType === Node.ELEMENT_NODE
+        ? endContainer : endContainer.parentElement;
+      const startDel = startEl?.closest('del, s');
+      const endDel = endEl?.closest('del, s');
+
+      if (startDel && startDel === endDel) {
+        // Unwrap: preserve inline formatting inside the del
+        const parent = startDel.parentNode;
+        const first = startDel.firstChild;
+        const last = startDel.lastChild;
+        while (startDel.firstChild) {
+          parent.insertBefore(startDel.firstChild, startDel);
+        }
+        parent.removeChild(startDel);
+        if (first && last) {
+          const newRange = document.createRange();
+          newRange.setStartBefore(first);
+          newRange.setEndAfter(last);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+        }
       } else {
-        const del = document.createElement('del');
-        range.surroundContents(del);
-        sel.removeAllRanges();
-        const newRange = document.createRange();
-        newRange.selectNodeContents(del);
-        sel.addRange(newRange);
+        // Wrap selection in <del>. extractContents handles cross-boundary selections
+        // that range.surroundContents cannot.
+        try {
+          const fragment = range.extractContents();
+          const del = document.createElement('del');
+          del.appendChild(fragment);
+          range.insertNode(del);
+          const newRange = document.createRange();
+          newRange.selectNodeContents(del);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+        } catch (err) {
+          console.error('Strikethrough failed:', err);
+        }
       }
       scheduleSave();
     } else {
@@ -384,7 +667,9 @@ preview.addEventListener('keydown', (e) => {
         const newCb = document.createElement('input');
         newCb.type = 'checkbox';
         newLi.appendChild(newCb);
-        newLi.appendChild(document.createTextNode(' '));
+        // NBSP (not ASCII space) so the caret has a visible anchor in an
+        // empty todo. .trim() still strips it during markdown serialization.
+        newLi.appendChild(document.createTextNode('\u00A0'));
         li.parentNode.insertBefore(newLi, li.nextSibling);
         placeCursorAtEnd(newLi);
       }
@@ -586,7 +871,7 @@ const PREVIEW_HTML = {
   'h1':        (sel) => { replaceSlashTextWithBlock('h1', '', sel); },
   'h2':        (sel) => { replaceSlashTextWithBlock('h2', '', sel); },
   'h3':        (sel) => { replaceSlashTextWithBlock('h3', '', sel); },
-  'todo':      (sel) => { insertHtmlAtSlash('<ul><li><input type="checkbox"> </li></ul>', sel); },
+  'todo':      (sel) => { insertHtmlAtSlash('<ul><li><input type="checkbox">&nbsp;</li></ul>', sel); },
   'code':      (sel) => { insertHtmlAtSlash('<pre><code>\n</code></pre>', sel); },
   'table':     (sel) => { insertHtmlAtSlash('<table><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr><tr><td>cell</td><td>cell</td><td>cell</td></tr></table>', sel); },
   'divider':   (sel) => { insertHtmlAtSlash('<hr>', sel); },
@@ -822,9 +1107,11 @@ function markdownToHtml(md) {
         const isChecked = cbMatch[1] !== ' ';
         const checked = isChecked ? ' checked' : '';
         const text = inlineMarkdown(cbMatch[2]);
+        // NBSP between checkbox and text so an empty todo still has a
+        // visible caret anchor (a trailing ASCII space collapses in CSS).
         content = isChecked
-          ? `<input type="checkbox"${checked}> <del class="checked-text">${text}</del>`
-          : `<input type="checkbox"${checked}> ${text}`;
+          ? `<input type="checkbox"${checked}>&nbsp;<del class="checked-text">${text}</del>`
+          : `<input type="checkbox"${checked}>&nbsp;${text}`;
       } else {
         content = inlineMarkdown(content);
       }
@@ -940,8 +1227,16 @@ function nodeToMarkdown(node) {
     case 's':
       return `~~${childContent()}~~`;
 
-    case 'a':
-      return `[${childContent()}](${node.getAttribute('href') || ''})`;
+    case 'a': {
+      const href = node.getAttribute('href') || '';
+      const text = childContent();
+      // If the link text matches its href, store as a bare URL (auto-linking
+      // will re-apply on render).
+      if (href && href === text && /^https?:\/\//i.test(href)) {
+        return href;
+      }
+      return `[${text}](${href})`;
+    }
 
     case 'img':
       return `![${node.getAttribute('alt') || ''}](${node.getAttribute('src') || ''})`;
