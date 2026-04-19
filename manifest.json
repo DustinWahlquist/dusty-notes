@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dusty Tab Notes",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A sidebar notepad for each Chrome tab group — with markdown editing, slash commands, and auto-save.",
   "permissions": [
     "sidePanel",
