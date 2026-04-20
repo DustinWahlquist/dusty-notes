@@ -121,8 +121,8 @@ body {
 
 .preview strong { color: #e6e6e6; }
 
-.preview a { color: #3794ff; text-decoration: none; cursor: pointer; }
-.preview a:hover { text-decoration: underline; }
+.preview a { color: #3794ff; text-decoration: underline; cursor: pointer; }
+.preview a:hover { opacity: 0.85; }
 
 .preview code {
   background: #2d2d2d;
@@ -417,4 +417,46 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+/* Link input popover (Ctrl+K) */
+.link-input-popover {
+  position: absolute;
+  z-index: 100;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #2d2d2d;
+  border: 1px solid #555;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.link-input-popover input {
+  width: 220px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #1e1e1e;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #d4d4d4;
+  outline: none;
+}
+
+.link-input-popover input:focus {
+  border-color: #3794ff;
+}
+
+.link-input-popover button {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: #0e639c;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.link-input-popover button:hover {
+  background: #1177bb;
 }

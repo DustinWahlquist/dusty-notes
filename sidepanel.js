@@ -302,11 +302,40 @@ preview.addEventListener('keyup', (e) => {
   }
 });
 
-// Linkify URLs in pasted plain text; leave HTML pastes to the browser.
+// Linkify URLs in pasted plain text; wrap selected text if a URL is pasted.
 preview.addEventListener('paste', (e) => {
   if (!isPreviewMode) return;
   const cd = e.clipboardData;
   if (!cd) return;
+
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+
+  // If text is selected AND the pasted content is a URL, wrap the selection
+  // as a hyperlink instead of replacing it.
+  const plainText = cd.getData('text/plain') || '';
+  const trimmed = plainText.trim();
+  URL_REGEX.lastIndex = 0;
+  if (!sel.isCollapsed && /^https?:\/\/\S+$/i.test(trimmed)) {
+    e.preventDefault();
+    const fragment = range.extractContents();
+    const a = document.createElement('a');
+    a.href = trimmed;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.appendChild(fragment);
+    range.insertNode(a);
+    // Place cursor after the new link
+    const newRange = document.createRange();
+    newRange.setStartAfter(a);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    scheduleSave();
+    return;
+  }
+
   const hasHtml = Array.from(cd.types || []).includes('text/html');
   if (hasHtml) {
     // Let browser handle rich paste, then linkify any bare URLs it contains.
@@ -317,15 +346,11 @@ preview.addEventListener('paste', (e) => {
     return;
   }
 
-  const text = cd.getData('text/plain');
-  if (!text) return;
+  if (!plainText) return;
   URL_REGEX.lastIndex = 0;
-  if (!URL_REGEX.test(text)) return;
+  if (!URL_REGEX.test(plainText)) return;
 
   e.preventDefault();
-  const sel = window.getSelection();
-  if (!sel.rangeCount) return;
-  const range = sel.getRangeAt(0);
   range.deleteContents();
 
   // Build a fragment with text and <a> nodes
@@ -333,13 +358,13 @@ preview.addEventListener('paste', (e) => {
   const re = new RegExp(URL_REGEX.source, 'g');
   let lastIdx = 0;
   let m;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(plainText)) !== null) {
     let url = m[0];
     const trailingMatch = url.match(/[.,;:!?)\]}'"]+$/);
     if (trailingMatch) url = url.slice(0, -trailingMatch[0].length);
     if (!url) continue;
     if (m.index > lastIdx) {
-      frag.appendChild(document.createTextNode(text.substring(lastIdx, m.index)));
+      frag.appendChild(document.createTextNode(plainText.substring(lastIdx, m.index)));
     }
     const a = document.createElement('a');
     a.href = url;
@@ -349,8 +374,8 @@ preview.addEventListener('paste', (e) => {
     frag.appendChild(a);
     lastIdx = m.index + url.length;
   }
-  if (lastIdx < text.length) {
-    frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+  if (lastIdx < plainText.length) {
+    frag.appendChild(document.createTextNode(plainText.substring(lastIdx)));
   }
 
   // Track the last inserted node so we can place the cursor after it
@@ -377,6 +402,152 @@ preview.addEventListener('click', (e) => {
     chrome.tabs.create({ url: a.href });
   } catch (_) {
     window.open(a.href, '_blank', 'noopener,noreferrer');
+  }
+});
+
+// ── Link shortcut (Cmd+K / Ctrl+K) — inline link input ──
+let activeLinkPopover = null;
+let savedLinkRange = null;
+
+function closeLinkPopover() {
+  if (activeLinkPopover) {
+    activeLinkPopover.remove();
+    activeLinkPopover = null;
+  }
+  savedLinkRange = null;
+}
+
+function openLinkPopover() {
+  closeLinkPopover();
+
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+
+  // If cursor is inside an existing link, pre-fill and allow editing
+  const existingLink = (range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer : range.startContainer.parentElement)?.closest('a');
+
+  // Save the range so we can use it after the input takes focus
+  savedLinkRange = range.cloneRange();
+
+  // Position the popover below the selection
+  const rects = range.getClientRects();
+  const rect = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+  const containerRect = editorContainer.getBoundingClientRect();
+
+  const popover = document.createElement('div');
+  popover.className = 'link-input-popover';
+  popover.setAttribute('contenteditable', 'false');
+  popover.style.left = Math.max(0, rect.left - containerRect.left) + 'px';
+  popover.style.top = (rect.bottom - containerRect.top + 4) + 'px';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Paste or type a link…';
+  if (existingLink) input.value = existingLink.href;
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = existingLink ? 'Update' : 'Save';
+
+  function applyLink() {
+    const url = input.value.trim();
+    if (!url) {
+      // If clearing the URL on an existing link, unwrap it
+      if (existingLink) {
+        const parent = existingLink.parentNode;
+        while (existingLink.firstChild) {
+          parent.insertBefore(existingLink.firstChild, existingLink);
+        }
+        parent.removeChild(existingLink);
+        scheduleSave();
+      }
+      closeLinkPopover();
+      preview.focus();
+      return;
+    }
+
+    if (existingLink) {
+      existingLink.href = url;
+      existingLink.target = '_blank';
+      existingLink.rel = 'noopener noreferrer';
+    } else if (savedLinkRange && !savedLinkRange.collapsed) {
+      // Restore the saved selection and wrap it in a link
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedLinkRange);
+
+      const fragment = savedLinkRange.extractContents();
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.appendChild(fragment);
+      savedLinkRange.insertNode(a);
+
+      // Place cursor after the new link
+      const newRange = document.createRange();
+      newRange.setStartAfter(a);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    } else {
+      // No selection — insert the URL as a new link at cursor
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = url;
+      if (savedLinkRange) {
+        savedLinkRange.insertNode(a);
+        const sel = window.getSelection();
+        const newRange = document.createRange();
+        newRange.setStartAfter(a);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+    }
+
+    closeLinkPopover();
+    preview.focus();
+    scheduleSave();
+  }
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      applyLink();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeLinkPopover();
+      preview.focus();
+      if (savedLinkRange) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(savedLinkRange);
+      }
+    }
+  });
+
+  saveBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    applyLink();
+  });
+
+  popover.appendChild(input);
+  popover.appendChild(saveBtn);
+  editorContainer.appendChild(popover);
+  activeLinkPopover = popover;
+  input.focus();
+}
+
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    if (!isPreviewMode) return;
+    e.preventDefault();
+    openLinkPopover();
   }
 });
 
